@@ -1,0 +1,40 @@
+String nodeName = "${env.NODE_NAME}";
+String project = "${env.PROJECT}"
+String project_repo = "${env.PROJECT_REPO}"
+String envKey = "${env.ENV_KEY}"
+String namespace = "${env.NAMESPACE}"
+String imageUrl
+if( envKey == "hlg" || envKey == "dev"  || envKey == "dev1" || envKey == "dev2" ){
+    nodeName = "${nodeName}-hlg-dev"
+}else {
+    nodeName = "${nodeName}-${envKey}"
+}
+
+node {
+    stage('Update docker image') {
+        imageUrl = "510338013850.dkr.ecr.us-east-1.amazonaws.com/${project_repo}:${envKey}"
+        sh "aws ecr get-login --region us-east-1 --no-include-email --registry-ids 510338013850 | sh -"
+        docker.withRegistry("https://510338013850.dkr.ecr.us-east-1.amazonaws.com") {
+            def image = docker.image("${project_repo}:${envKey}")
+            image.pull()
+            sh("docker tag ${imageUrl} ${project_repo}:${envKey}")
+            image.push("${envKey}-${env.BUILD_ID}-deploy")
+        }
+        sh("docker rmi -f ${imageUrl} || :")
+        sh("docker rmi -f ${imageUrl}-${env.BUILD_ID}-deploy || :")
+        sh("docker rmi -f ${project_repo}:${envKey} || :")
+    }
+}
+
+node(nodeName) {
+    stage('Preparation') {
+        checkout scm
+    }
+    stage('Deploy') {
+        String projectReleaseName = "${project}-${envKey}"
+        String ecrURL = "510338013850.dkr.ecr.us-east-1.amazonaws.com/${project_repo}"
+        String ecrTag = "${envKey}-${env.BUILD_ID}-deploy"
+        sh "helm upgrade --install ${projectReleaseName} chart/ --values=chart/values-${envKey}.yaml --namespace ${namespace} --set image.repository=${ecrURL} --set image.tag=${ecrTag} --debug --wait --timeout 2400 "
+        cleanWs()
+    }
+}

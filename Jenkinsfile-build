@@ -1,0 +1,48 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurperClassic
+import java.io.File
+
+String awsEcrAccount = "510338013850"
+String project = "${env.PROJECT}"
+String project_type = "${env.PROJECT_TYPE}"
+String project_repo = "${env.PROJECT_REPO}"
+String envKey = "${env.ENV_KEY}"
+String jobName = "${env.JOB_NAME}".toString()
+String publishVersion = "${envKey}-${env.BUILD_ID}"
+jobName = jobName.replaceAll( /[^0-9a-zA-Z ]/, '' ).tr( ' ', '-' )
+
+node {
+    stage('Preparation') {
+        checkout scm
+    }
+    stage('Build Docker Image') {
+        // Necessario para conseguir baixar a imagem base XXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com/microservices
+        sh 'aws ecr get-login --region us-east-1 --no-include-email --registry-ids 610462181037 | sh -'
+        sh "docker build -t ${project_repo}:latest ."
+    }
+    stage('Push and Tag Docker Image') {
+        String imageExists =  sh(returnStdout: true, script: "docker images -q ${project_repo}:latest 2> /dev/null")
+        if(imageExists != ""){
+            sh "aws ecr get-login --region us-east-1 --no-include-email --registry-ids ${awsEcrAccount} | sh -"
+            sh "docker tag ${project_repo}:latest ${project_repo}:${publishVersion}"
+            docker.withRegistry("https://${awsEcrAccount}.dkr.ecr.us-east-1.amazonaws.com") {
+                def image = docker.image("${project_repo}:${publishVersion}")
+                image.push()
+                image.push(envKey)
+            }
+            sh("docker rmi -f ${project_repo}:latest || :")
+            sh("docker rmi -f ${project_repo}:${publishVersion} || :")
+            sh("docker rmi -f ${awsEcrAccount}.dkr.ecr.us-east-1.amazonaws.com/${project_repo}:${publishVersion} || :")
+            sh("docker rmi -f ${awsEcrAccount}.dkr.ecr.us-east-1.amazonaws.com/${project_repo}:${envKey} || :")
+            if(env.DEPLOY == 'true'){
+                stage('Deploy') {
+                    build job: "XXXXXXX-${project_type}-${envKey}/deploy/${project}", parameters:
+                    [
+                        [$class: 'StringParameterValue', name: 'NODE_NAME', value: "${env.NODE_NAME}"]
+                    ]
+                }
+            }
+        }
+    }
+}

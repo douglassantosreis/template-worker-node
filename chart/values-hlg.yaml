@@ -1,0 +1,48 @@
+environment: hlg
+
+## Application confs
+### Port
+appPort: 3000
+
+### min number pods
+minReplicas: 1
+
+### Container size (request/limits)
+resources:
+  limits:
+    cpu: 2
+    memory: 1Gi
+  requests:
+    cpu: 600m
+    memory: 250Mi
+
+## AWS IAM Role
+### Application needs integration with AWS services (via API calls)
+arnIAMrole: "arn:aws:iam::XXXXXXXXXXX:role/worker-template"
+
+## Container image confs
+image:
+  tag: hlg
+
+## Enviroment variables
+extraEnv:
+  - name: ENVIRONMENT
+    value: development
+  - name: QUEUE_URL
+    value: QUEUE
+  - name: REGION_QUEUE
+    value: us-east-1
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom:
+      secretKeyRef:
+        name: aws-credentials
+        key: aws_access_key
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: aws-credentials
+        key: aws_secret_access_key
+  - name: MESSAGE_PARALLEL
+    value: "10"
+  - name: VISIBILITY_TIMEOUT
+    value: "60"
